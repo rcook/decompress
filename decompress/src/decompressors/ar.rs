@@ -1,4 +1,3 @@
-use crate::decompressors::utils::normalize_mode;
 use crate::{DecompressError, Decompression, Decompressor, ExtractOpts, Listing};
 use ar::Archive;
 use lazy_static::lazy_static;
@@ -130,6 +129,7 @@ impl Decompressor for Ar {
 
             #[cfg(unix)]
             {
+                use crate::decompressors::utils::normalize_mode;
                 use std::os::unix::fs::PermissionsExt;
                 let mode = normalize_mode(mode);
                 fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;

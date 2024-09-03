@@ -8,10 +8,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use zip::ZipArchive;
 
-use crate::{
-    decompressors::utils::normalize_mode, DecompressError, Decompression, Decompressor,
-    ExtractOpts, Listing,
-};
+use crate::{DecompressError, Decompression, Decompressor, ExtractOpts, Listing};
 
 lazy_static! {
     static ref RE: Regex = Regex::new(r"(?i)\.zip$").unwrap();
@@ -120,6 +117,7 @@ impl Decompressor for Zip {
             // Get and Set permissions
             #[cfg(unix)]
             {
+                use crate::decompressors::utils::normalize_mode;
                 use std::os::unix::fs::PermissionsExt;
                 if let Some(mode) = file.unix_mode() {
                     let mode = normalize_mode(mode);
