@@ -28,14 +28,6 @@ impl Unrar {
     pub fn build(re: Option<Regex>) -> Box<Self> {
         Box::new(Self::new(re))
     }
-
-    fn get_entry_path(entry: &FileHeader) -> String {
-        let mut s = entry.filename.to_string_lossy().into_owned();
-        if entry.is_directory() && !s.ends_with('/') {
-            s.push('/');
-        }
-        s
-    }
 }
 
 impl Decompressor for Unrar {
@@ -51,10 +43,26 @@ impl Decompressor for Unrar {
     }
 
     fn list(&self, archive: &Path) -> Result<Listing, DecompressError> {
+        fn enclosed_name(h: FileHeader) -> String {
+            let temp = h.filename.to_string_lossy();
+
+            #[cfg(windows)]
+            let mut s = temp.replace("\\", "/");
+
+            #[cfg(unix)]
+            let mut s = temp.into_owned();
+
+            if h.is_directory() && !s.ends_with("/") {
+                s.push('/')
+            }
+
+            s
+        }
+
         let rar = check!(unrar::Archive::new(archive).open_for_listing());
         let entries = rar
             .into_iter()
-            .map(|e| Ok(Self::get_entry_path(&check!(e))))
+            .map(|header| Ok(enclosed_name(check!(header))))
             .collect::<Result<Vec<_>, DecompressError>>()?;
         Ok(Listing { id: "rar", entries })
     }
@@ -63,7 +71,7 @@ impl Decompressor for Unrar {
         &self,
         archive: &Path,
         to: &Path,
-        _opts: &ExtractOpts,
+        opts: &ExtractOpts,
     ) -> Result<Decompression, DecompressError> {
         use std::fs;
         if !to.exists() {
@@ -73,8 +81,17 @@ impl Decompressor for Unrar {
         let mut rar = check!(unrar::Archive::new(archive).open_for_processing());
         let mut files = Vec::new();
         while let Some(header) = check!(rar.read_header()) {
-            files.push(Self::get_entry_path(header.entry()));
-            rar = check!(header.extract_with_base(to));
+            let entry = header.entry();
+            if entry.is_directory() || entry.is_file() {
+                let output_path = to.join(&entry.filename);
+                if output_path != to && (opts.filter)(&output_path) {
+                    let output_path = (opts.map)(&output_path);
+                    files.push(output_path.to_string_lossy().into_owned());
+                    rar = check!(header.extract_to(output_path));
+                    continue;
+                }
+            }
+            rar = check!(header.skip());
         }
 
         Ok(Decompression { id: "rar", files })
