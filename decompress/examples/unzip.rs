@@ -25,8 +25,8 @@ fn main() {
         to,
         &ExtractOptsBuilder::default()
             .strip(strip)
-            .filter(|path| {
-                if let Some(path) = path.to_str() {
+            .filter(|args| {
+                if let Some(path) = args.path().to_str() {
                     return path.ends_with("ex.sh");
                 }
                 false

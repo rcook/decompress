@@ -1,11 +1,9 @@
+use crate::{DecompressError, ExtractOpts, FilterArgs, MapArgs, RelPath};
+use path_absolutize::Absolutize;
 use std::borrow::Cow;
-use std::{
-    fs::{self},
-    io::{self, BufReader, Read},
-    path::{Path, PathBuf},
-};
-
-use crate::{DecompressError, ExtractOpts};
+use std::fs::{self};
+use std::io::{self, BufReader, Read};
+use std::path::{Path, PathBuf};
 use tar::{Archive, EntryType};
 
 pub fn tar_list(out: &mut Archive<Box<dyn Read>>) -> Result<Vec<String>, DecompressError> {
@@ -25,6 +23,8 @@ pub fn tar_extract(
     to: &Path,
     opts: &ExtractOpts,
 ) -> Result<Vec<String>, DecompressError> {
+    let output_dir = to.absolutize()?;
+
     let mut files = vec![];
     if !to.exists() {
         fs::create_dir_all(to)?;
@@ -42,16 +42,30 @@ pub fn tar_extract(
         // because we potentially stripped a component, we may have an empty path, in which case
         // the joined target will be identical to the target folder
         // we take this approach to avoid hardcoding a check against empty ""
-        let outpath = to.join(filepath);
+        let outpath = to.join(&filepath);
         if to == outpath {
             continue;
         }
 
-        if !(opts.filter)(outpath.as_path()) {
-            continue;
+        let output_path = output_dir.join(&filepath);
+
+        let is_directory = entry.header().entry_type() == tar::EntryType::Directory;
+        let is_file = entry.header().entry_type() == tar::EntryType::Regular;
+        let rel_path = if is_directory {
+            RelPath::new_directory(&filepath)?
+        } else {
+            RelPath::new_file(&filepath)?
+        };
+
+        if is_directory || is_file {
+            let filter_args = FilterArgs::new(&rel_path, &output_path, &output_dir);
+            if !(opts.filter)(&filter_args) {
+                continue;
+            }
         }
 
-        let outpath: Cow<'_, Path> = (opts.map)(outpath.as_path());
+        let map_args = MapArgs::new(&rel_path, &output_path, &output_dir);
+        let outpath: Cow<'_, Path> = (opts.map)(&map_args);
 
         match entry.header().entry_type() {
             EntryType::Directory => {}

@@ -1,14 +1,14 @@
-use std::{
-    fs::File,
-    io::{self, BufReader},
-    path::{Path, PathBuf},
+use crate::{
+    DecompressError, Decompression, Decompressor, ExtractOpts, FilterArgs, Listing, MapArgs,
+    RelPath,
 };
-
 use lazy_static::lazy_static;
+use path_absolutize::Absolutize;
 use regex::Regex;
+use std::fs::File;
+use std::io::{self, BufReader};
+use std::path::{Path, PathBuf};
 use zip::ZipArchive;
-
-use crate::{DecompressError, Decompression, Decompressor, ExtractOpts, Listing};
 
 lazy_static! {
     static ref RE: Regex = Regex::new(r"(?i)\.zip$").unwrap();
@@ -70,6 +70,8 @@ impl Decompressor for Zip {
     ) -> Result<Decompression, DecompressError> {
         use std::fs;
 
+        let output_dir = to.absolutize()?;
+
         let mut files = vec![];
         let mut rdr = build_archive(archive)?;
         if !to.exists() {
@@ -91,16 +93,28 @@ impl Decompressor for Zip {
             // because we potentially stripped a component, we may have an empty path, in which case
             // the joined target will be identical to the target folder
             // we take this approach to avoid hardcoding a check against empty ""
-            let outpath = to.join(filepath);
+            let outpath = to.join(&filepath);
             if outpath == to {
                 continue;
             }
 
-            if !(opts.filter)(outpath.as_path()) {
-                continue;
+            let output_path = output_dir.join(&filepath);
+
+            let rel_path = if file.is_dir() {
+                RelPath::new_directory(filepath)?
+            } else {
+                RelPath::new_file(filepath)?
+            };
+
+            if file.is_dir() || file.is_file() {
+                let filter_args = FilterArgs::new(&rel_path, &output_path, &output_dir);
+                if !(opts.filter)(&filter_args) {
+                    continue;
+                }
             }
 
-            let outpath = (opts.map)(outpath.as_path());
+            let map_args = MapArgs::new(&rel_path, &output_path, &output_dir);
+            let outpath = (opts.map)(&map_args);
 
             if file.name().ends_with('/') {
                 fs::create_dir_all(&outpath)?;

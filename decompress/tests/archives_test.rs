@@ -112,8 +112,8 @@ fn test_custom() {
 fn test_filter(#[case] archive: &str, #[case] outdir: &str, #[case] id: &str) {
     let extract_opts = ExtractOptsBuilder::default()
         .strip(0)
-        .filter(|path| {
-            if let Some(path) = path.to_str() {
+        .filter(|args| {
+            if let Some(path) = args.path().to_str() {
                 return path.ends_with("ex.sh");
             }
             false
@@ -136,8 +136,8 @@ fn test_filter(#[case] archive: &str, #[case] outdir: &str, #[case] id: &str) {
 fn test_map(#[case] archive: &str, #[case] outdir: &str, #[case] id: &str) {
     let extract_opts = ExtractOptsBuilder::default()
         .strip(0)
-        .map(|path| {
-            let mut path = path.to_path_buf();
+        .map(|args| {
+            let mut path = args.path().to_path_buf();
             path.set_file_name(format!(
                 "abc-{}",
                 path.file_name().unwrap().to_str().unwrap()

@@ -21,8 +21,17 @@
 #![allow(clippy::module_name_repetitions)]
 pub mod decompressors;
 
+mod filter_args;
+mod map_args;
+mod rel_path;
+
+pub use filter_args::FilterArgs;
+pub use map_args::MapArgs;
+pub use rel_path::{RelPath, RelPathKind};
+
 use derive_builder::Builder;
 use std::borrow::Cow;
+use std::path::PathBuf;
 use std::{convert::Infallible, io, path::Path};
 use thiserror::Error;
 
@@ -39,10 +48,16 @@ pub enum DecompressError {
 
     #[error("no compressor found")]
     MissingCompressor,
+
+    #[error("path is not relative: `{0}`")]
+    PathNotRelative(PathBuf),
+
+    #[error("path contains non-UTF-8 characters: `{0}`")]
+    PathNotUtf8(PathBuf),
 }
 
-pub type FilterFn = dyn Fn(&Path) -> bool;
-pub type MapFn = dyn Fn(&Path) -> Cow<'_, Path>;
+pub type FilterFn = dyn Fn(&FilterArgs) -> bool;
+pub type MapFn = dyn for<'a> Fn(&'a MapArgs) -> Cow<'a, Path>;
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
@@ -56,20 +71,20 @@ pub struct ExtractOpts {
     #[builder(setter(custom), default = "Box::new(|_| true)")]
     pub filter: Box<FilterFn>,
 
-    #[builder(setter(custom), default = "Box::new(|path| Cow::from(path))")]
+    #[builder(setter(custom), default = "Box::new(|args| Cow::from(args.path()))")]
     pub map: Box<MapFn>,
 }
 
 impl ExtractOptsBuilder {
     /// Given a predicate, filter a path in.
     #[must_use]
-    pub fn filter(mut self, value: impl Fn(&Path) -> bool + 'static) -> Self {
+    pub fn filter(mut self, value: impl Fn(&FilterArgs) -> bool + 'static) -> Self {
         self.filter = Some(Box::new(value));
         self
     }
     /// Given a mapping function, transform a path into a different or similar path
     #[must_use]
-    pub fn map(mut self, value: impl Fn(&Path) -> Cow<'_, Path> + 'static) -> Self {
+    pub fn map(mut self, value: impl for<'a> Fn(&'a MapArgs) -> Cow<'a, Path> + 'static) -> Self {
         self.map = Some(Box::new(value));
         self
     }

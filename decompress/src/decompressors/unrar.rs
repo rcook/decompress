@@ -1,9 +1,12 @@
+use crate::{
+    DecompressError, Decompression, Decompressor, ExtractOpts, FilterArgs, Listing, MapArgs,
+    RelPath,
+};
 use lazy_static::lazy_static;
+use path_absolutize::Absolutize;
 use regex::Regex;
 use std::path::Path;
 use unrar::FileHeader;
-
-use crate::{DecompressError, Decompression, Decompressor, ExtractOpts, Listing};
 
 macro_rules! check {
     ($e : expr) => {
@@ -74,6 +77,13 @@ impl Decompressor for Unrar {
         opts: &ExtractOpts,
     ) -> Result<Decompression, DecompressError> {
         use std::fs;
+
+        let output_dir = to.absolutize()?;
+
+        if opts.strip != 0 {
+            todo!("Stripping path components not supported")
+        }
+
         if !to.exists() {
             fs::create_dir_all(to)?;
         }
@@ -84,11 +94,21 @@ impl Decompressor for Unrar {
             let entry = header.entry();
             if entry.is_directory() || entry.is_file() {
                 let output_path = to.join(&entry.filename);
-                if output_path != to && (opts.filter)(&output_path) {
-                    let output_path = (opts.map)(&output_path);
-                    files.push(output_path.to_string_lossy().into_owned());
-                    rar = check!(header.extract_to(output_path));
-                    continue;
+                if output_path != to {
+                    let rel_path = if entry.is_directory() {
+                        RelPath::new_directory(&entry.filename)?
+                    } else {
+                        RelPath::new_file(&entry.filename)?
+                    };
+                    let full_output_path = output_dir.join(&entry.filename);
+                    let filter_args = FilterArgs::new(&rel_path, &full_output_path, &output_dir);
+                    if (opts.filter)(&filter_args) {
+                        let map_args = MapArgs::new(&rel_path, &full_output_path, &output_dir);
+                        let output_path = (opts.map)(&map_args);
+                        files.push(output_path.to_string_lossy().into_owned());
+                        rar = check!(header.extract_to(output_path));
+                        continue;
+                    }
                 }
             }
             rar = check!(header.skip());
